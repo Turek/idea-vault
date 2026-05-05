@@ -160,9 +160,34 @@ Once notified:
 
 - Read `/tmp/gemini_response.json` for the response body.
 - Read `/tmp/gemini_exit` for the exit code.
-- If exit code is non-zero or response is empty, also read
-  `/tmp/gemini_err.log` for diagnostic output, then proceed to Step 3
-  (Claude web-search fallback).
+- If exit code is non-zero or response is empty, read
+  `/tmp/gemini_err.log` for diagnostic output.
+
+#### 2d. If the helper failed: fix and retry — do NOT substitute curl
+
+If the helper exited non-zero, your job is to **debug and re-run the
+helper**, not replace it with your own curl. Common, fixable failures:
+
+- **Path or permission issue writing to `/tmp/...`** — `mkdir -p` any
+  parent dir, or change the `>` redirect target, then re-launch the
+  helper (still with `run_in_background: true`).
+- **`.env` not found** — the helper reads `$PWD/.env`. Confirm the
+  current working directory is the user's idea-vault project, not the
+  plugin folder. Re-launch.
+- **`GEMINI_API_KEY` missing** — surface this to the user; do NOT
+  proceed with anonymous calls.
+- **Genuine API failure after the helper's own retries and Flash
+  fallback** — only then proceed to Step 3 (Claude web-search
+  fallback). The helper has already tried 429/503 retries and a Flash
+  fallback before reporting failure; you do not need to retry the API
+  yourself.
+
+**You may not, under any circumstance, work around a helper failure by
+writing your own curl to `generativelanguage.googleapis.com`.** That
+bypasses retry/backoff, model-fallback, the project's configured
+`GEMINI_MODEL`, the long curl timeout, and the structured logging.
+Doing so silently degrades research quality and is the documented
+failure mode that motivated this entire skill structure.
 
 Parse `candidates[0].content.parts[*].text` (concatenate) for the report
 text. Parse `candidates[0].groundingMetadata.groundingChunks` for sources
