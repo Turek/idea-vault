@@ -105,23 +105,37 @@ Prompt template (string in your head, do not paste verbatim):
 
 ### Step 2. Call Gemini (mandatory background launch + poll)
 
-Use the helper `${CLAUDE_PLUGIN_ROOT}/scripts/gemini_research.sh
-<prompt-file>`. The script:
+**Two hard rules. Both apply every time. No exceptions.**
+
+**Rule 1 — Use the helper script. Never write your own curl.**
+You MUST invoke `${CLAUDE_PLUGIN_ROOT}/scripts/gemini_research.sh
+<prompt-file>`. Do NOT write an inline `curl` to the Gemini API, even
+"as a quick check" or "because the script seems to be failing". The
+helper handles things you will get wrong if you reinvent it:
+`--max-time 480`, retry-with-backoff on 429/503, and a Flash fallback.
+A hand-written `curl` with `--max-time 38` (or anything under ~60 s)
+will fail every time on grounded research and is the single most
+common reason research silently degrades. If the script genuinely
+fails after running, proceed to Step 3 — do not bypass it with curl.
+
+**Rule 2 — Always launch in the background.** The Bash tool's default
+sandbox timeout (~40 s) will kill any foreground call. You MUST use
+`run_in_background: true` on the Bash invocation. Do NOT run the
+helper inline, even with an explicit `timeout:` value — backgrounding
+is the only path that reliably survives. There is no alternative.
+
+The helper script:
 
 - Sources `$PWD/.env` (the user's project, not the plugin).
 - Calls Gemini's `generateContent` with `google_search` grounding.
-- Retries the configured model on 429/503 (10s, then 30s).
+- Retries the configured model on 429/503 (10 s, then 30 s).
 - Falls back once to `gemini-2.5-flash` on persistent failure.
 - Routinely runs 2–5 minutes; sometimes longer.
 
-**Hard rule: never call this script in the foreground.** The Bash tool's
-default sandbox timeout (~40 s) will kill the call and you will silently
-fall back to Claude web search. **You MUST use the background-and-poll
-pattern below. There is no alternative path.**
-
 #### 2a. Launch in the background
 
-Bash tool, `run_in_background: true`, command:
+Bash tool, **`run_in_background: true`** (this is non-negotiable —
+without it the call dies at the sandbox timeout), command:
 
 ```
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/gemini_research.sh" \
@@ -131,7 +145,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/gemini_research.sh" \
 echo $? > /tmp/gemini_exit
 ```
 
-The Bash call returns immediately. Do not wait inline.
+The Bash call returns immediately. Do not wait inline. Do not write
+your own curl as a parallel attempt while waiting.
 
 #### 2b. Wait for completion via notification
 
