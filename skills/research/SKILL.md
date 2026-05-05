@@ -103,38 +103,51 @@ Prompt template (string in your head, do not paste verbatim):
 > Use real citations. Be honest about uncertainty. If you can't find
 > data, say so.
 
-### Step 2. Call Gemini
+### Step 2. Call Gemini (mandatory background launch + poll)
 
-Use the helper `${CLAUDE_PLUGIN_ROOT}/scripts/gemini_research.sh <prompt-file>`.
+Use the helper `${CLAUDE_PLUGIN_ROOT}/scripts/gemini_research.sh
+<prompt-file>`. The script:
 
-The script:
 - Sources `$PWD/.env` (the user's project, not the plugin).
-- Calls `https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent`
-  with `google_search` tool enabled.
-- Returns JSON to stdout.
-- May take 2–5 minutes for grounded research (Gemini runs many searches
-  and synthesizes a report).
+- Calls Gemini's `generateContent` with `google_search` grounding.
+- Retries the configured model on 429/503 (10s, then 30s).
+- Falls back once to `gemini-2.5-flash` on persistent failure.
+- Routinely runs 2–5 minutes; sometimes longer.
 
-**Important — long timeout required.** Grounded research routinely runs
-3–5 minutes. The default Bash tool timeout is too short. You MUST run
-the script with an explicit long timeout. Two equivalent options:
+**Hard rule: never call this script in the foreground.** The Bash tool's
+default sandbox timeout (~40 s) will kill the call and you will silently
+fall back to Claude web search. **You MUST use the background-and-poll
+pattern below. There is no alternative path.**
 
-Option A (preferred — single Bash call with long timeout):
+#### 2a. Launch in the background
 
-> Bash tool call:
->   command: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/gemini_research.sh" /tmp/idea_research_prompt.txt > /tmp/gemini_response.json 2> /tmp/gemini_err.log`
->   timeout: 600000  (10 minutes)
+Bash tool, `run_in_background: true`, command:
 
-Option B (background + poll, useful if you want to do other work in
-parallel):
+```
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/gemini_research.sh" \
+  /tmp/idea_research_prompt.txt \
+  > /tmp/gemini_response.json \
+  2> /tmp/gemini_err.log
+echo $? > /tmp/gemini_exit
+```
 
-1. Launch in background: `bash "${CLAUDE_PLUGIN_ROOT}/scripts/gemini_research.sh" /tmp/idea_research_prompt.txt > /tmp/gemini_response.json 2> /tmp/gemini_err.log; echo $? > /tmp/gemini_exit` with `run_in_background: true`.
-2. Poll with `until [ -f /tmp/gemini_exit ]; do sleep 15; done` (or use the Monitor tool). Allow at least 7 minutes total.
-3. Read `/tmp/gemini_response.json` once `/tmp/gemini_exit` exists.
+The Bash call returns immediately. Do not wait inline.
 
-Do NOT use a 1-second sleep and assume the call finished. That is the
-single most common reason research silently falls back to Claude web
-search.
+#### 2b. Wait for completion via notification
+
+You will be notified when the background command exits. Do NOT proactively
+poll with `sleep` loops. Just wait for the completion notification, then
+proceed to step 2c. Allow up to 10 minutes.
+
+#### 2c. Read the result
+
+Once notified:
+
+- Read `/tmp/gemini_response.json` for the response body.
+- Read `/tmp/gemini_exit` for the exit code.
+- If exit code is non-zero or response is empty, also read
+  `/tmp/gemini_err.log` for diagnostic output, then proceed to Step 3
+  (Claude web-search fallback).
 
 Parse `candidates[0].content.parts[*].text` (concatenate) for the report
 text. Parse `candidates[0].groundingMetadata.groundingChunks` for sources

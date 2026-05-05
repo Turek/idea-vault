@@ -2,9 +2,15 @@
 # Calls Gemini API with google_search grounding.
 # Usage: ./gemini_research.sh <prompt-file>
 # Prompt file is a plain-text file containing the user prompt.
-# Stdout: raw JSON response from Gemini.
+# Stdout: raw JSON response from Gemini (on success).
 # Stderr: status messages.
 # Exit 0 on success, non-zero on failure.
+#
+# Resilience:
+#   - Retries the configured model on HTTP 429 / 503 with backoff
+#     (10s then 30s).
+#   - If those retries also fail, falls back once to gemini-2.5-flash
+#     (unless that is already the configured model).
 #
 # This script lives at ${CLAUDE_PLUGIN_ROOT}/scripts/ but reads .env from
 # the user's project directory ($PWD), not from the plugin folder.
@@ -35,11 +41,10 @@ if [[ -z "${GEMINI_API_KEY:-}" ]]; then
   exit 2
 fi
 
-MODEL="${GEMINI_MODEL:-gemini-2.5-pro}"
-ENDPOINT="https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent"
+PRIMARY_MODEL="${GEMINI_MODEL:-gemini-2.5-pro}"
+FALLBACK_MODEL="gemini-2.5-flash"
 
-# Build request body. Use python instead of jq because jq isn't always
-# present and python3 is.
+# Build request body once. Reused across all attempts.
 PROMPT_TEXT="$(cat "$PROMPT_FILE")"
 REQUEST_BODY="$(
   python3 -c "
@@ -54,24 +59,68 @@ print(json.dumps(body))
 " <<< "$PROMPT_TEXT"
 )"
 
-# Call API. Timeout 5 minutes.
-TMP_RESPONSE="$(mktemp /tmp/gemini_response.XXXXXX.json)"
-HTTP_CODE=$(
-  curl -sS -o "$TMP_RESPONSE" -w "%{http_code}" \
+# call_gemini <model> <out-file>
+# Returns the HTTP status code on stdout. "000" on transport failure.
+call_gemini() {
+  local model="$1"
+  local out="$2"
+  local endpoint="https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent"
+  curl -sS -o "$out" -w "%{http_code}" \
     --max-time 480 \
     -H "Content-Type: application/json" \
     -H "x-goog-api-key: ${GEMINI_API_KEY}" \
-    -X POST "$ENDPOINT" \
+    -X POST "$endpoint" \
     -d "$REQUEST_BODY" \
-  || echo "000"
-)
+    || echo "000"
+}
 
-if [[ "$HTTP_CODE" != "200" ]]; then
-  echo "ERROR: Gemini API returned HTTP $HTTP_CODE" >&2
-  cat "$TMP_RESPONSE" >&2
-  rm -f "$TMP_RESPONSE"
-  exit 1
+# try_model <model>
+# Up to three attempts (initial + two retries). Retries only on 429/503.
+# On 200, prints response to stdout and returns 0.
+# On any other final state, returns 1.
+try_model() {
+  local model="$1"
+  local out
+  out="$(mktemp /tmp/gemini_response.XXXXXX.json)"
+  local backoffs=(10 30)
+  local attempt=0
+  local code
+
+  while :; do
+    code="$(call_gemini "$model" "$out")"
+    if [[ "$code" == "200" ]]; then
+      cat "$out"
+      rm -f "$out"
+      return 0
+    fi
+
+    if [[ "$code" == "429" || "$code" == "503" ]] && (( attempt < ${#backoffs[@]} )); then
+      local wait="${backoffs[$attempt]}"
+      echo "WARN: ${model} returned HTTP ${code}, retrying in ${wait}s..." >&2
+      sleep "$wait"
+      attempt=$((attempt + 1))
+      continue
+    fi
+
+    echo "ERROR: ${model} returned HTTP ${code} (giving up on this model)" >&2
+    cat "$out" >&2 || true
+    rm -f "$out"
+    return 1
+  done
+}
+
+# Primary attempt.
+if try_model "$PRIMARY_MODEL"; then
+  exit 0
 fi
 
-cat "$TMP_RESPONSE"
-rm -f "$TMP_RESPONSE"
+# Fallback to Flash if it's not already the primary.
+if [[ "$PRIMARY_MODEL" != "$FALLBACK_MODEL" ]]; then
+  echo "INFO: falling back to ${FALLBACK_MODEL}..." >&2
+  if try_model "$FALLBACK_MODEL"; then
+    exit 0
+  fi
+fi
+
+echo "ERROR: all Gemini attempts failed" >&2
+exit 1

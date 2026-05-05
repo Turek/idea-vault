@@ -6,24 +6,50 @@ the data files into whichever project you run it in.
 
 ## Install
 
-This plugin installs directly from a local directory. No marketplace needed.
+Pick whichever path matches how you got this plugin.
 
-### 1. Clone or place this folder somewhere stable
+### From the marketplace (recommended)
 
-For example: `~/Code/idea-vault/`. Don't put it inside the Cowork project
-that will store your ideas — keep them separate.
+In Claude Code or Cowork:
 
-### 2. Install the plugin
+```
+/plugin marketplace add Turek/idea-vault
+/plugin install idea-vault@idea-vault-marketplace
+```
 
-From any Claude Code or Cowork session:
+### From a `.plugin` file (Cowork)
+
+Build the bundle:
+
+```bash
+cd ~/Documents/Claude/idea-vault
+zip -r /tmp/idea-vault.plugin . -x "*.DS_Store" -x ".git/*" -x ".gitignore"
+```
+
+or run: 
+
+```bash
+./scripts/build-plugin.sh
+```
+
+That produces `idea-vault.plugin` and `idea-vault.zip` next to the plugin
+directory. Drag `idea-vault.plugin` into Cowork.
+
+### From local source
+
+```bash
+claude plugins add ~//Documents/Claude/idea-vault
+```
+
+Or, from inside Claude Code / Cowork:
 
 ```
 /plugin install /absolute/path/to/idea-vault
 ```
 
-After install, run `/reload-plugins` to activate.
+After install, reload plugins to activate.
 
-### 3. Initialize a project
+### Initialize a project
 
 Open (or create) the Cowork project where you want your idea vault to live.
 With that project as your working directory, ask Claude to "initialize idea vault".
@@ -39,7 +65,7 @@ This creates:
 └── ideas/               One folder per captured idea (notes.md + index.md, plus research.md after first research run).
 ```
 
-### 4. Add API keys
+### Add API keys
 
 In your project root:
 
@@ -51,7 +77,7 @@ Edit `.env` and fill in:
 - `GEMINI_API_KEY` — get from https://aistudio.google.com/apikey
 - `PERPLEXITY_API_KEY` — get from https://www.perplexity.ai/settings/api
 
-### 5. Set up scheduled tasks (optional but recommended)
+### Set up scheduled tasks (optional but recommended)
 
 In Cowork, type `/schedule` and create:
 
@@ -89,9 +115,16 @@ The plugin ships skills (no slash commands). Each skill activates on natural-lan
   Pre-call cost estimate, hard cap from `CLAUDE.md` (default $0.50).
   Output merges into `research.md` (replaces stale sections, appends new
   info, keeps an updates log).
-- **Score** — 7-dimension weighted rubric (market, gap, differentiation,
-  complexity, monetization, fit, time-to-signal). Updates `top-ideas.md`.
-  Suggests Validated (>=80) or Killed (<40) but never auto-applies.
+- **Score** — 10-dimension rubric (problem urgency, market scale,
+  competition, unfair advantage, distribution, monetization, regulatory,
+  execution complexity, founder-market fit, validation velocity).
+  Weighted **geometric mean** (penalizes weakness in any dimension)
+  multiplied by an evidence-quality **confidence scalar**. Critical
+  pillars at 0 or 1 trigger an immediate Tier 4 disqualifier. Output
+  classifies into one of four tiers — **Ready to Build / Needs Empirical
+  Validation / Structural Pivot Required / Unviable** — and updates
+  `top-ideas.md`. Tier 1 suggests Validated, Tier 4 suggests Killed;
+  never auto-applies.
 
 ## Status lifecycle
 

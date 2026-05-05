@@ -4,8 +4,25 @@ description: Run Perplexity Sonar Deep Research on a specific idea (manual, cost
 
 You are running the **deep research** workflow.
 
-Argument: `$ARGUMENTS` is the slug. If empty, list ideas with existing
-`research.md` and ask which to deep-dive.
+Argument: `$ARGUMENTS` is the slug, or a partial. Resolve it before
+running the skill:
+
+1. **Eligible set**: ideas under `$PWD/ideas/<slug>/` with a non-empty
+   `research.md` (deep research enriches an existing research file).
+2. **Empty argument**: list every eligible idea (slug + title) and ask
+   the user which to deep-dive. Stop.
+3. **Exact match** in eligible set: use it.
+4. **Prefix match** in eligible set:
+   - one match → use it, tell the user which slug was selected
+   - multiple → numbered picker of just those matches
+   - none → fall through to substring match
+5. **Substring match** in eligible set:
+   - one match → use it, tell the user which slug was selected
+   - multiple → numbered picker
+   - none → list every eligible idea and ask
+6. If a candidate matches outside the eligible set (no `research.md`
+   yet), tell the user and offer to run standard research first via
+   `/idea-vault:research <slug>`.
 
 Read the research skill at `${CLAUDE_PLUGIN_ROOT}/skills/research/SKILL.md`,
 specifically the **Deep research (Perplexity)** section. Follow it. All

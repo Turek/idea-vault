@@ -107,7 +107,8 @@ Researching -> Validated -> Building -> Shipped
 
 - `Researching` is the default on capture. The idea immediately gets its
   own folder under `ideas/` and enters the automated research queue.
-- Scoring suggests `Validated` (>=80) or `Killed` (<40); never auto-applied.
+- Scoring suggests `Validated` (Tier 1: Ready to Build) or `Killed`
+  (Tier 4: Unviable); never auto-applied.
 - `Building` and `Shipped` are manual transitions.
 
 ## Configurable knobs
@@ -128,16 +129,33 @@ deep_research:
 
 scoring:
   weights:
-    market_size: 0.15
-    competition_gap: 0.20
-    differentiation: 0.15
-    build_complexity: 0.15
-    monetization: 0.10
-    personal_fit: 0.15
-    time_to_signal: 0.10
-  bands:
-    strong_min: 80                      Suggest Validated at or above.
-    kill_max: 40                        Suggest Killed below or at.
+    problem_urgency: 0.12
+    market_scale: 0.10
+    competition_landscape: 0.10
+    unfair_advantage: 0.12
+    distribution_viability: 0.12
+    monetization_wtp: 0.12
+    regulatory_feasibility: 0.08
+    execution_complexity: 0.08
+    founder_market_fit: 0.08
+    validation_velocity: 0.08
+  critical_pillars:                     Score 0 or 1 here -> Tier 4 (Unviable).
+    - problem_urgency
+    - market_scale
+    - distribution_viability
+    - monetization_wtp
+    - regulatory_feasibility
+  confidence_anchors:                   Multiplier applied to base score.
+    high: 1.00                          User testing, LOIs, significant surveys.
+    medium: 0.80                        Secondary research, competitive analysis.
+    low: 0.50                           Team opinions, deductions.
+    guess: 0.30                         Pure intuition, no citations.
+  tiers:
+    tier1_min_final: 70                 AND confidence >= 0.80. Tier 1: Ready to Build.
+    tier2_min_final: 50                 Tier 2: Needs Empirical Validation.
+    tier3_min_final: 30                 Tier 3: Structural Pivot Required.
+    # Below 30, or any critical pillar at 0 or 1: Tier 4 (Unviable).
+  disqualifier_score_max: 1             Critical pillar at this score or lower -> Tier 4.
 
 dedupe:
   auto_merge_threshold: 0.85
@@ -148,7 +166,9 @@ dedupe:
 
 - **Slugs** are kebab-case, derived from title, max 40 chars.
 - **Dates** use ISO 8601 (`2026-05-04`).
-- **Scores** are integers 0-100 with a per-dimension breakdown table.
+- **Scores** are integers 0-100 with a per-dimension breakdown table,
+  base (geometric mean × 100), final (base × confidence), confidence
+  level, and tier (1–4).
 - **Inbox entries** are paragraph-length, not one-liners.
 - **No HTML comments** added by skills.
 - **research.md** is the single source of truth for research; deep-research
