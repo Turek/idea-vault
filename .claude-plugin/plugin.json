@@ -1,0 +1,8 @@
+{
+  "name": "idea-vault",
+  "description": "Capture, dedupe, research, and score ideas. Inbox-first workflow with Gemini-primary automated research, Claude fallback, and on-demand Perplexity Sonar Deep Research.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Tomasz Turczynski"
+  }
+}
