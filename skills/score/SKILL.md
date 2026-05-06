@@ -50,13 +50,24 @@ they score 0 or 1, bypassing the math entirely.
 | 5 | Distribution Viability | 0.12 | Yes | named low-CAC channel with comparables (organic loop, owned audience, SEO, partner); LTV:CAC over 3 plausible | one channel identified, costs unknown | only "we'll do content marketing" or paid-only with no LTV math |
 | 6 | Monetization & WTP | 0.12 | Yes | comparable products priced; named WTP signal (interviews, pre-orders, existing spend) | plausible model, no direct WTP evidence | no revenue model OR free-only with no upgrade path |
 | 7 | Regulatory Feasibility | 0.08 | Yes | no exposure, or clear precedent and bounded compliance cost | some exposure (PII, payments, content) but well-trodden | hard blockers: HIPAA without infra, securities, FDA, IP held by incumbent |
-| 8 | Execution Complexity | 0.08 | No | solo MVP under 3 months, off-the-shelf stack | small team, 3–9 months | needs team plus funding plus over 12 months, novel research |
+| 8 | Execution Complexity | 0.08 | No | solo MVP under 4 weeks with AI-assisted dev (Claude Code, Cursor) on off-the-shelf stack; CRUD-heavy, well-documented APIs, no novel algorithms | solo or 2-person, 1–3 months with AI assistance; some custom integration, moderate domain complexity, or non-trivial state management | AI assistance does not meaningfully compress the work: hardware iteration, novel ML/research, deep regulatory work (formal certifications), multi-team enterprise integration, or high-reliability systems requiring formal verification |
 | 9 | Founder-Market Fit | 0.08 | No | direct domain experience, network, unique access | adjacent skills, must learn the space | outside wheelhouse with no entry point |
 | 10 | Validation Velocity | 0.08 | No | landing page / smoke test / 5 interviews in days | needs prototype, weeks | requires building the product (months+) |
 
 **Critical pillars** (default; from `CLAUDE.md`):
 Problem Urgency, Market Scale, Distribution Viability, Monetization & WTP,
 Regulatory Feasibility.
+
+**Note on Execution Complexity and AI assistance.** Anchors assume
+modern AI-assisted development (Claude Code, Cursor) as the baseline.
+AI compresses **implementation** — typing code, scaffolding, glue,
+boilerplate, well-documented APIs. AI does not meaningfully compress:
+domain understanding, regulatory clearance, hardware iteration,
+novel ML/research, multi-team enterprise integration, or
+distributed-systems reliability work. Score based on what's left after
+the compressible work is removed. Industry data on AI productivity
+gains is wide (1.5×–10× depending on task type and context); do not
+apply a fixed multiplier — judge the remaining non-compressible scope.
 
 ## The math
 
