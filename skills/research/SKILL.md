@@ -84,13 +84,12 @@ Things research couldn't resolve and that need user judgment or deeper dive.
 
 ## Mode 1 — Standard research
 
-### Step 1. Build the research prompt
+### Step 1. Build the prompts
 
-Construct one focused prompt that asks for the full report structure
-above. Reference the idea's title and description from
-`$PWD/ideas/<slug>/index.md`.
+Construct two prompts referencing the idea's title and description
+from `$PWD/ideas/<slug>/index.md`.
 
-Prompt template (use as the `prompt` argument to the MCP tool):
+**Full prompt** (used for attempts 1 and 2):
 
 > You are doing market research for the following idea: **<title>**.
 > Description: <description from index.md>.
@@ -108,25 +107,52 @@ Prompt template (use as the `prompt` argument to the MCP tool):
 > Use real citations. Be honest about uncertainty. If you can't find
 > data, say so.
 
-### Step 2. Call gemini_research
+**Tightened prompt** (used for attempt 3 only — drops pros/cons/open
+questions/next steps to reduce search count and response time):
 
-Call the **`gemini_research`** tool from the `idea-vault-gateway` MCP
-server with `prompt=<the prompt from Step 1>`.
+> You are doing market research for the following idea: **<title>**.
+> Description: <description from index.md>.
+>
+> Produce a structured report with ONLY these sections:
+> 1. Market signal (real demand? trends? size?)
+> 2. Top 5–8 competitors with name, URL, offer, pricing, notable gaps.
+> 3. Gaps and complaints from real user forums. Cite each.
+>
+> Be concise. Use real citations.
 
-Do NOT fall back to bash, curl, or any helper script — the gateway is
-the only sanctioned grounded-research path. If the tool isn't
-registered (server not installed) or it errors, go to Step 3.
+### Step 2. Tiered fallback chain
 
-The tool returns the markdown report text, citations, and a `usage`
-object (typically with `input_tokens`, `output_tokens`,
-`total_tokens`, and optionally a `cost_usd` figure). **Capture the
-`usage` object verbatim** — it's needed for Step 6's confirmation.
-On success, proceed to Step 4 (Write research.md). Skip Step 3.
+Try in order. As soon as one attempt returns a usable response, stop
+and proceed to Step 3. Capture the `usage` object from whichever
+attempt succeeded — it's needed for Step 6's confirmation.
 
-### Step 3. On gemini_research failure: Claude built-in web_search
+| Attempt | Tool | Args | Notes |
+|---------|------|------|-------|
+| 1 | `gemini_research` | `prompt=<full>`, `model="gemini-2.5-pro"` | Best quality. ~50% chance of beating the 180 s MCP timeout in current Cowork. |
+| 2 | `gemini_research` | `prompt=<full>`, `model="gemini-2.5-flash"` | Flash is 2–3× faster than Pro. |
+| 3 | `gemini_research` | `prompt=<tightened>`, `model="gemini-2.5-flash"` | Tightened prompt cuts Gemini's internal search count, further reducing response time. |
+| 4 | `web_search` (Claude built-in) | full prompt material as multiple queries | Last resort. Counts toward Cowork plan, no provider tokens reported. |
 
-If `gemini_research` errored, returned empty content, or is
-unavailable: use the built-in `web_search` tool. Run several searches:
+Failure conditions that trigger advancing to the next attempt:
+
+- MCP tool-call timeout (typically 180 s).
+- Tool returns an error.
+- Tool returns empty content.
+- (Attempt 4 only) `web_search` unavailable.
+
+If the gateway does not accept a `model` argument, fall back to
+calling `gemini_research` with just the prompt for attempts 1 and 2
+(the gateway's default model decides Pro-vs-Flash). Attempt 3 still
+uses the tightened prompt.
+
+Do NOT fall back to bash, curl, or any helper script. The MCP gateway
+is the only sanctioned grounded-research path; `web_search` is the
+only sanctioned non-grounded fallback.
+
+#### Notes on the web_search branch
+
+If attempt 4 ran, run several searches covering the idea's core
+concepts:
 
 - "<idea concept> competitors"
 - "<idea concept> reviews complaints"
@@ -134,32 +160,35 @@ unavailable: use the built-in `web_search` tool. Run several searches:
 - "<idea concept> reddit"
 - Domain-specific terms from the description.
 
-Synthesize into the same output structure. Note that `web_search` does
-not surface provider-side token usage — Claude tokens are billed
-through the user's Cowork plan and not exposed per-call. The Step 6
+Synthesize into the same output structure. `web_search` does not
+surface provider-side token usage — Claude tokens are billed through
+the user's Cowork plan and not exposed per-call. The Step 6
 confirmation should say "tokens: not reported (Claude web_search)" in
 this branch.
 
-### Step 4. Write research.md
+### Step 3. Write research.md
 
 Write the structured report to `$PWD/ideas/<slug>/research.md`.
 Replace any existing placeholder. Set `Last updated: <today>` and
 `Provider(s):` to whichever ran (Gemini or Claude).
 
-### Step 5. Update index.md
+### Step 4. Update index.md
 
 Update `Last researched: <today>` in `$PWD/ideas/<slug>/index.md`.
 
-### Step 6. Brief confirmation
+### Step 5. Brief confirmation
 
 One paragraph summary back to the user. Always include:
 
-- Which provider ran (Gemini or Claude web_search).
+- **Which attempt succeeded** — say so explicitly. Examples:
+  "via gemini_research (Pro)", "via gemini_research (Flash, full
+  prompt)", "via gemini_research (Flash, tightened prompt)", or
+  "via Claude web_search (last-resort fallback)".
 - Top 1–2 findings.
 - Suggested next step.
 - **Provider-side usage line** built from the `usage` object captured
-  in Step 2 (or "tokens: not reported (Claude web_search)" for the
-  fallback branch). Format examples:
+  during the successful attempt (or "tokens: not reported (Claude
+  web_search)" for the fallback branch). Format examples:
 
   > Tokens: in 1,247 / out 3,418 / total 4,665. Cost: ~$0.012.
   > Tokens: not reported (Claude web_search). Counts toward your Cowork plan.
