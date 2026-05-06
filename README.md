@@ -59,23 +59,25 @@ This creates:
 ```
 <your project>/
 ├── CLAUDE.md            Project context + all configurable knobs.
-├── .env.example         Copy to .env and fill in API keys.
+├── .env.example         Reserved for future per-project overrides (no API keys here).
 ├── inbox.md             Source of truth for all ideas.
 ├── top-ideas.md         Auto-generated leaderboard.
 └── ideas/               One folder per captured idea (notes.md + index.md, plus research.md after first research run).
 ```
 
-### Add API keys
+### Install the gateway and set up API keys
 
-In your project root:
+Research routes through the `idea-vault-gateway` MCP server, which holds
+keys globally so you only configure them once.
 
-```
-cp .env.example .env
-```
-
-Edit `.env` and fill in:
-- `GEMINI_API_KEY` — get from https://aistudio.google.com/apikey
-- `PERPLEXITY_API_KEY` — get from https://www.perplexity.ai/settings/api
+1. Install the gateway binary (one-time, not per-project). See the
+   gateway's own README for install instructions.
+2. Run `idea-vault-gateway init` once. It will prompt for and save:
+   - `GEMINI_API_KEY` — get from https://aistudio.google.com/apikey
+   - `PERPLEXITY_API_KEY` — get from https://www.perplexity.ai/settings/api
+   Keys land in `~/.config/idea-vault-gateway/.env`.
+3. The plugin's `.mcp.json` registers the gateway automatically — no
+   per-project config needed.
 
 ### Set up scheduled tasks (optional but recommended)
 
@@ -99,7 +101,7 @@ The plugin ships skills (no slash commands). Each skill activates on natural-lan
 |-------|-------------|
 | `init` | "initialize idea vault", "set up idea vault", "scaffold idea vault" |
 | `capture` | "capture idea …", "add idea …", "save this idea …" |
-| `research` | "research X", "validate X", "investigate X" (Gemini → Claude fallback; Perplexity for deep dives) |
+| `research` | "research X", "validate X", "investigate X" (gemini_research via the idea-vault-gateway MCP server, falls back to Claude web_search; deep dives use perplexity_research with deep mode) |
 | `score` | "score X", "evaluate X", "rate X", "rank ideas" |
 
 ## How it works
@@ -108,13 +110,13 @@ The plugin ships skills (no slash commands). Each skill activates on natural-lan
   `ideas/<slug>/` with `index.md` (short summary) and `notes.md` (your
   full raw input + a cleaned-up rewrite). Dedupe is automatic
   (auto-merge >85% similar, ask 60–85%). No separate promote step.
-- **Research** — Claude built-in `web_search` by default (every 2h via
-  scheduler). Optional Gemini grounded-search upgrade via the bundled
-  helper script if you set `IDEA_VAULT_GEMINI_OK=1` in `.env` — only
-  viable from environments without short bash timeouts (Claude Code
-  CLI in a real terminal). Cowork's ~45 s bash sandbox kills the
-  helper before it can complete. Creates `ideas/<slug>/research.md`
-  on first run.
+- **Research** — calls the `gemini_research` tool on the
+  `idea-vault-gateway` MCP server (every 2h via scheduler). On
+  failure, falls back to Claude built-in `web_search`. Perplexity is
+  not used in standard research — it's reserved for `/idea-vault:deep-research`.
+  The MCP layer means long-running grounded calls aren't subject to
+  bash sandbox timeouts. Creates `ideas/<slug>/research.md` on first
+  run.
 - **Deep research** — manual command using Perplexity Sonar Deep Research.
   Pre-call cost estimate, hard cap from `CLAUDE.md` (default $0.50).
   Output merges into `research.md` (replaces stale sections, appends new

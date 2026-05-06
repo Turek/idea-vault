@@ -50,20 +50,20 @@ paragraphs.
 **a. Created** — list every file and the `ideas/` directory you wrote.
 Note any files that already existed as "skipped: …".
 
-**b. Set up API keys** — tell the user that research commands need keys
-in `.env`. Walk them through it:
+**b. Set up API keys via the gateway** — research now runs through the
+`idea-vault-gateway` MCP server, which holds keys globally so you only
+configure them once across all projects.
 
-1. `cp .env.example .env` in this directory.
-2. `GEMINI_API_KEY` — used by `/idea-vault:research` for grounded web
-   search. Get one at https://aistudio.google.com/apikey (free tier is
-   plenty for this workflow).
-3. `PERPLEXITY_API_KEY` — used only by `/idea-vault:deep-research`
-   (paid, ~$0.30–0.50/idea). Get one at
-   https://www.perplexity.ai/settings/api. Optional — skip if you don't
-   plan to run deep research yet.
-4. Paste each key after the `=` in `.env`, no quotes.
-5. Make sure `.env` is in your project's `.gitignore`. Init does not
-   manage `.gitignore` for you.
+1. Install the gateway binary if you haven't already (see the plugin
+   README's install section).
+2. Run `idea-vault-gateway init` once. It will prompt for
+   `GEMINI_API_KEY` and `PERPLEXITY_API_KEY` and write them to
+   `~/.config/idea-vault-gateway/.env`.
+3. Get keys at https://aistudio.google.com/apikey (Gemini, free tier
+   is plenty) and https://www.perplexity.ai/settings/api (Perplexity,
+   paid — only needed for `/idea-vault:deep-research`).
+4. The plugin's per-project `.env` is no longer used for API keys. It
+   exists only for project-specific overrides if you need them later.
 
 **c. Try it now** — `/idea-vault:capture <your first idea>` works
 without any keys; only research/deep-research need them.
@@ -176,8 +176,11 @@ dedupe:
 
 ## Security
 
-- `.env` holds `GEMINI_API_KEY` and `PERPLEXITY_API_KEY`. Gitignored.
-- Skills source `.env` from this project's directory before curl calls.
+- API keys live globally in `~/.config/idea-vault-gateway/.env`,
+  managed by `idea-vault-gateway init`. The plugin never sees keys.
+- The plugin's per-project `.env` should still be gitignored even
+  though it currently holds no secrets — future per-project config
+  might.
 - API keys are never echoed, logged, or written to idea files.
 
 ## Scheduling (do this once)
@@ -245,24 +248,12 @@ _None._
 ### .env.example
 
 ```
-# Copy this file to .env and fill in your keys.
-# Make sure your project's .gitignore excludes .env.
+# This file exists for project-specific overrides only.
+# API keys live globally in ~/.config/idea-vault-gateway/.env,
+# managed by `idea-vault-gateway init` — not here.
 
-# Google Gemini API key (https://aistudio.google.com/apikey).
-# Only used if IDEA_VAULT_GEMINI_OK=1 below.
-GEMINI_API_KEY=
-
-# Perplexity API key (https://www.perplexity.ai/settings/api).
-# Only used by /idea-vault:deep-research (paid).
-PERPLEXITY_API_KEY=
-
-# Opt in to Gemini grounded search for standard research.
-# Default (unset or 0): skill uses Claude's built-in web_search.
-# Set to 1 only if running from a real terminal (Claude Code CLI),
-# where bash supports long timeouts. Cowork's bash sandbox kills
-# long-running calls at ~45 seconds, so the helper script cannot
-# complete there regardless of how it's invoked.
-# IDEA_VAULT_GEMINI_OK=1
+# (Reserved for future per-project config.)
+```
 
 ## Edge cases
 
