@@ -117,8 +117,11 @@ Do NOT fall back to bash, curl, or any helper script — the gateway is
 the only sanctioned grounded-research path. If the tool isn't
 registered (server not installed) or it errors, go to Step 3.
 
-The tool returns the markdown report text and citations. On success,
-parse and proceed to Step 4 (Write research.md). Skip Step 3.
+The tool returns the markdown report text, citations, and a `usage`
+object (typically with `input_tokens`, `output_tokens`,
+`total_tokens`, and optionally a `cost_usd` figure). **Capture the
+`usage` object verbatim** — it's needed for Step 6's confirmation.
+On success, proceed to Step 4 (Write research.md). Skip Step 3.
 
 ### Step 3. On gemini_research failure: Claude built-in web_search
 
@@ -131,7 +134,11 @@ unavailable: use the built-in `web_search` tool. Run several searches:
 - "<idea concept> reddit"
 - Domain-specific terms from the description.
 
-Synthesize into the same output structure.
+Synthesize into the same output structure. Note that `web_search` does
+not surface provider-side token usage — Claude tokens are billed
+through the user's Cowork plan and not exposed per-call. The Step 6
+confirmation should say "tokens: not reported (Claude web_search)" in
+this branch.
 
 ### Step 4. Write research.md
 
@@ -145,8 +152,21 @@ Update `Last researched: <today>` in `$PWD/ideas/<slug>/index.md`.
 
 ### Step 6. Brief confirmation
 
-One paragraph summary back to the user: which provider ran, top 1–2
-findings, suggested next step.
+One paragraph summary back to the user. Always include:
+
+- Which provider ran (Gemini or Claude web_search).
+- Top 1–2 findings.
+- Suggested next step.
+- **Provider-side usage line** built from the `usage` object captured
+  in Step 2 (or "tokens: not reported (Claude web_search)" for the
+  fallback branch). Format examples:
+
+  > Tokens: in 1,247 / out 3,418 / total 4,665. Cost: ~$0.012.
+  > Tokens: not reported (Claude web_search). Counts toward your Cowork plan.
+
+  If the gateway reports `cost_usd` directly, surface that as the
+  authoritative figure. If only token counts are returned, omit the
+  cost estimate — do NOT guess at pricing.
 
 ## Mode 2 — Deep research (Perplexity, manual)
 
@@ -212,7 +232,18 @@ Per-section logic:
 
 ### Step D6. Confirmation
 
-One paragraph: what changed, actual cost, top new finding.
+One paragraph back to the user. Always include:
+
+- What changed in `research.md` (sections replaced vs. appended).
+- Top new finding (1–2 sentences).
+- Suggested next step.
+- **Provider-side usage line** built from the gateway's response.
+  Format example:
+
+  > Tokens: in 4,210 / out 3,008 / cite 412 / reason 8,640. Search queries: 18. Cost: $0.34 (cap $0.50).
+
+  Always show actual cost and the cap together so the user can see
+  the headroom (or overage) at a glance.
 
 ## General rules
 
