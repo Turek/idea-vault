@@ -123,15 +123,22 @@ questions/next steps to reduce search count and response time):
 ### Step 2. Tiered fallback chain
 
 Try in order. As soon as one attempt returns a usable response, stop
-and proceed to Step 3. Capture the `usage` object from whichever
-attempt succeeded — it's needed for Step 6's confirmation.
+and proceed to Step 3. Track which attempt succeeded — that string
+goes into Step 5's confirmation.
 
 | Attempt | Tool | Args | Notes |
 |---------|------|------|-------|
 | 1 | `gemini_research` | `prompt=<full>`, `model="gemini-2.5-pro"` | Best quality. ~50% chance of beating the 180 s MCP timeout in current Cowork. |
 | 2 | `gemini_research` | `prompt=<full>`, `model="gemini-2.5-flash"` | Flash is 2–3× faster than Pro. |
 | 3 | `gemini_research` | `prompt=<tightened>`, `model="gemini-2.5-flash"` | Tightened prompt cuts Gemini's internal search count, further reducing response time. |
-| 4 | `web_search` (Claude built-in) | full prompt material as multiple queries | Last resort. Counts toward Cowork plan, no provider tokens reported. |
+| 4 | `web_search` (Claude built-in) | full prompt material as multiple queries | Last resort. |
+
+**Tool I/O shape (verified against gateway 1.27.0).** Both
+`gemini_research` and `perplexity_research` return a single field:
+`{"result": "<markdown string>"}`. The gateway does NOT currently
+return token counts, cost, or any other usage metadata — do not
+attempt to extract a `usage` object, it does not exist. Take
+`result` as the report text and proceed.
 
 Failure conditions that trigger advancing to the next attempt:
 
@@ -160,11 +167,7 @@ concepts:
 - "<idea concept> reddit"
 - Domain-specific terms from the description.
 
-Synthesize into the same output structure. `web_search` does not
-surface provider-side token usage — Claude tokens are billed through
-the user's Cowork plan and not exposed per-call. The Step 6
-confirmation should say "tokens: not reported (Claude web_search)" in
-this branch.
+Synthesize into the same output structure.
 
 ### Step 3. Write research.md
 
@@ -186,16 +189,10 @@ One paragraph summary back to the user. Always include:
   "via Claude web_search (last-resort fallback)".
 - Top 1–2 findings.
 - Suggested next step.
-- **Provider-side usage line** built from the `usage` object captured
-  during the successful attempt (or "tokens: not reported (Claude
-  web_search)" for the fallback branch). Format examples:
 
-  > Tokens: in 1,247 / out 3,418 / total 4,665. Cost: ~$0.012.
-  > Tokens: not reported (Claude web_search). Counts toward your Cowork plan.
-
-  If the gateway reports `cost_usd` directly, surface that as the
-  authoritative figure. If only token counts are returned, omit the
-  cost estimate — do NOT guess at pricing.
+The gateway does not currently return token counts or cost (output
+schema is `{result: string}` only). Do not include a usage line until
+the gateway is upgraded to surface usage metadata in its response.
 
 ## Mode 2 — Deep research (Perplexity, manual)
 
@@ -204,13 +201,14 @@ Triggered only via `/idea-vault:deep-research <slug>`.
 ### Step D1. Pre-flight cost check
 
 Read `$PWD/CLAUDE.md` `deep_research.cost_cap_usd` (default 0.50).
+Pre-call estimate heuristic for a typical idea: ~$0.30–0.45.
 
-The gateway returns actual cost in the tool response. Pre-call estimate
-heuristic for a typical idea: ~$0.30–0.45.
-
-If you have reason to expect the call will exceed the cap (e.g. an
-unusually large existing `research.md` will inflate the prompt), warn
-the user before calling and let them decide.
+The gateway does not currently return cost in the tool response
+(output schema is `{result: string}` only), so post-call cost
+verification is not available. If you have reason to expect the
+call will exceed the cap (e.g. an unusually large existing
+`research.md` will inflate the prompt), warn the user before calling
+and let them decide.
 
 ### Step D2. Build the deep prompt
 
@@ -224,17 +222,12 @@ Include:
 ### Step D3. Call perplexity_research with deep=true
 
 Call **`perplexity_research`** with `prompt=<the deep prompt>` and
-`deep: true`. The gateway handles the long-running call without
-timeout concerns.
+`deep: true`. The gateway handles the long-running call.
 
-The tool returns:
-- The markdown report text.
-- Citations (array of URLs).
-- Actual cost (USD), broken down by token type and search queries.
-
-If the actual cost exceeds the cap from D1, surface that to the user
-along with the report — the call already happened, so don't abort,
-but flag the overage.
+The tool returns `{"result": "<markdown string>"}` — same shape as
+`gemini_research`. No usage metadata, no cost breakdown. Take the
+`result` string as the deep report. Citations, if any, are inline in
+the markdown.
 
 ### Step D4. Merge into existing research.md
 
@@ -256,7 +249,7 @@ Per-section logic:
 
 - <date> — Initial research via Gemini. ...
 - <date> — Deep research via Perplexity. Sections updated: <list>.
-  Sections appended to: <list>. Cost: $0.XX.
+  Sections appended to: <list>.
 ```
 
 ### Step D6. Confirmation
@@ -266,13 +259,10 @@ One paragraph back to the user. Always include:
 - What changed in `research.md` (sections replaced vs. appended).
 - Top new finding (1–2 sentences).
 - Suggested next step.
-- **Provider-side usage line** built from the gateway's response.
-  Format example:
 
-  > Tokens: in 4,210 / out 3,008 / cite 412 / reason 8,640. Search queries: 18. Cost: $0.34 (cap $0.50).
-
-  Always show actual cost and the cap together so the user can see
-  the headroom (or overage) at a glance.
+The gateway does not currently return cost or usage in the response,
+so the confirmation cannot quote actual cost. Once the gateway is
+upgraded to surface usage metadata, restore an actual-cost line here.
 
 ## General rules
 
