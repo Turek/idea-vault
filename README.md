@@ -108,9 +108,13 @@ The plugin ships skills (no slash commands). Each skill activates on natural-lan
   `ideas/<slug>/` with `index.md` (short summary) and `notes.md` (your
   full raw input + a cleaned-up rewrite). Dedupe is automatic
   (auto-merge >85% similar, ask 60–85%). No separate promote step.
-- **Research** — Gemini grounded search runs first (every 2h via scheduler).
-  Falls back to Claude built-in web search on failure. Creates
-  `ideas/<slug>/research.md` on first run.
+- **Research** — Claude built-in `web_search` by default (every 2h via
+  scheduler). Optional Gemini grounded-search upgrade via the bundled
+  helper script if you set `IDEA_VAULT_GEMINI_OK=1` in `.env` — only
+  viable from environments without short bash timeouts (Claude Code
+  CLI in a real terminal). Cowork's ~45 s bash sandbox kills the
+  helper before it can complete. Creates `ideas/<slug>/research.md`
+  on first run.
 - **Deep research** — manual command using Perplexity Sonar Deep Research.
   Pre-call cost estimate, hard cap from `CLAUDE.md` (default $0.50).
   Output merges into `research.md` (replaces stale sections, appends new

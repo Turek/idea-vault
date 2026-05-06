@@ -249,11 +249,20 @@ _None._
 # Make sure your project's .gitignore excludes .env.
 
 # Google Gemini API key (https://aistudio.google.com/apikey).
+# Only used if IDEA_VAULT_GEMINI_OK=1 below.
 GEMINI_API_KEY=
 
 # Perplexity API key (https://www.perplexity.ai/settings/api).
+# Only used by /idea-vault:deep-research (paid).
 PERPLEXITY_API_KEY=
-```
+
+# Opt in to Gemini grounded search for standard research.
+# Default (unset or 0): skill uses Claude's built-in web_search.
+# Set to 1 only if running from a real terminal (Claude Code CLI),
+# where bash supports long timeouts. Cowork's bash sandbox kills
+# long-running calls at ~45 seconds, so the helper script cannot
+# complete there regardless of how it's invoked.
+# IDEA_VAULT_GEMINI_OK=1
 
 ## Edge cases
 

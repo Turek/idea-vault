@@ -1,18 +1,36 @@
 ---
 name: research
-description: Run market and competitor research on a single idea. Gemini primary, Claude built-in web search fallback. Includes deep research mode via Perplexity Sonar Deep Research. Use when user runs /idea-vault:research, /idea-vault:research-next, /idea-vault:deep-research, or asks to research/validate/investigate an idea.
+description: Run market and competitor research on a single idea. Claude built-in web search by default, with optional Gemini grounded-search upgrade for environments with longer bash timeouts. Includes deep research mode via Perplexity Sonar Deep Research. Use when user runs /idea-vault:research, /idea-vault:research-next, /idea-vault:deep-research, or asks to research/validate/investigate an idea.
 ---
 
 # Research skill
 
 Two modes:
 
-1. **Standard research** (default): Gemini grounded search → Claude web
-   search fallback. Cheap, automated, runs once per idea unless triggered
-   again.
+1. **Standard research** (default): Claude built-in `web_search`. Cheap,
+   reliable, runs once per idea unless triggered again. Optional Gemini
+   grounded-search upgrade if the user has set `IDEA_VAULT_GEMINI_OK=1`
+   in `.env` (only viable from environments without short bash sandbox
+   timeouts — see "Why web_search is the default" below).
 2. **Deep research** (manual only via `/idea-vault:deep-research`):
    Perplexity Sonar Deep Research. Costs real money. Hard cap from
    `$PWD/CLAUDE.md`.
+
+## Why web_search is the default
+
+Cowork (desktop and scheduled tasks) runs each bash invocation in a
+sandbox capped at ~45 seconds, with backgrounded children dying with
+the parent. Gemini grounded search empirically takes longer than that,
+so the helper script will be killed mid-curl every time in Cowork —
+no amount of script-level retry, backoff, or backgrounding can work
+around the host wall-clock. Defaulting to `web_search` saves ~45 s of
+wasted helper-launch time per research run and produces equivalent
+research quality from Claude's built-in tool.
+
+The helper script remains in the plugin so users who run the skill
+from a real terminal (Claude Code CLI, where Bash supports up to
+10-minute timeouts) can opt into grounded search by setting
+`IDEA_VAULT_GEMINI_OK=1` in their project's `.env`.
 
 ## Inputs
 
@@ -103,9 +121,21 @@ Prompt template (string in your head, do not paste verbatim):
 > Use real citations. Be honest about uncertainty. If you can't find
 > data, say so.
 
-### Step 2. Call Gemini (mandatory background launch + poll)
+### Step 2. Pick the provider
 
-**Two hard rules. Both apply every time. No exceptions.**
+Read `$PWD/.env`. If `IDEA_VAULT_GEMINI_OK=1` is set AND
+`GEMINI_API_KEY` is set, attempt Gemini grounded search via the
+helper (Step 2A). Otherwise, go straight to Claude `web_search`
+(Step 2B).
+
+In Cowork (desktop or scheduled), the helper will be killed at the
+~45 s sandbox cap before completing — you'll fall through to Step 2B
+either way. Treating this as the default saves the wasted launch.
+
+### Step 2A. Gemini grounded search via the helper (opt-in only)
+
+This branch runs only if both flags above are set. Two hard rules
+apply throughout.
 
 **Rule 1 — Use the helper script. Never write your own curl.**
 You MUST invoke `${CLAUDE_PLUGIN_ROOT}/scripts/gemini_research.sh
@@ -113,16 +143,13 @@ You MUST invoke `${CLAUDE_PLUGIN_ROOT}/scripts/gemini_research.sh
 "as a quick check" or "because the script seems to be failing". The
 helper handles things you will get wrong if you reinvent it:
 `--max-time 480`, retry-with-backoff on 429/503, and a Flash fallback.
-A hand-written `curl` with `--max-time 38` (or anything under ~60 s)
-will fail every time on grounded research and is the single most
-common reason research silently degrades. If the script genuinely
-fails after running, proceed to Step 3 — do not bypass it with curl.
+A hand-written `curl` with a short `--max-time` will fail every time
+on grounded research. If the helper genuinely fails after running,
+proceed to Step 2B — do not bypass it with curl.
 
-**Rule 2 — Always launch in the background.** The Bash tool's default
-sandbox timeout (~40 s) will kill any foreground call. You MUST use
-`run_in_background: true` on the Bash invocation. Do NOT run the
-helper inline, even with an explicit `timeout:` value — backgrounding
-is the only path that reliably survives. There is no alternative.
+**Rule 2 — Always launch in the background.** Use
+`run_in_background: true` on the Bash invocation. Foreground (even
+with an explicit `timeout:`) is forbidden.
 
 The helper script:
 
@@ -132,10 +159,7 @@ The helper script:
 - Falls back once to `gemini-2.5-flash` on persistent failure.
 - Routinely runs 2–5 minutes; sometimes longer.
 
-#### 2a. Launch in the background
-
-Bash tool, **`run_in_background: true`** (this is non-negotiable —
-without it the call dies at the sandbox timeout), command:
+Launch:
 
 ```
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/gemini_research.sh" \
@@ -145,82 +169,47 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/gemini_research.sh" \
 echo $? > /tmp/gemini_exit
 ```
 
-The Bash call returns immediately. Do not wait inline. Do not write
-your own curl as a parallel attempt while waiting.
+Wait for the completion notification (do not poll with sleep loops),
+then read `/tmp/gemini_response.json`, `/tmp/gemini_exit`, and on
+non-zero exit `/tmp/gemini_err.log`.
 
-#### 2b. Wait for completion via notification
+If the helper failed for a fixable reason (`/tmp` path, `.env` not
+found, `GEMINI_API_KEY` missing), fix and re-launch the helper (still
+backgrounded). Never substitute inline curl. If the helper failed
+because the host bash sandbox killed it before completion, that's the
+documented Cowork limitation — fall through to Step 2B and remember
+to advise the user that `IDEA_VAULT_GEMINI_OK=1` only helps in
+non-Cowork environments.
 
-You will be notified when the background command exits. Do NOT proactively
-poll with `sleep` loops. Just wait for the completion notification, then
-proceed to step 2c. Allow up to 10 minutes.
+On success: parse `candidates[0].content.parts[*].text` (concatenate)
+for the report text. Parse `candidates[0].groundingMetadata.groundingChunks`
+for sources to cite. Skip Step 2B and proceed to Step 3.
 
-#### 2c. Read the result
+### Step 2B. Claude built-in web search (default path)
 
-Once notified:
+Use the `web_search` tool. Run several searches covering the idea's
+core concepts:
 
-- Read `/tmp/gemini_response.json` for the response body.
-- Read `/tmp/gemini_exit` for the exit code.
-- If exit code is non-zero or response is empty, read
-  `/tmp/gemini_err.log` for diagnostic output.
-
-#### 2d. If the helper failed: fix and retry — do NOT substitute curl
-
-If the helper exited non-zero, your job is to **debug and re-run the
-helper**, not replace it with your own curl. Common, fixable failures:
-
-- **Path or permission issue writing to `/tmp/...`** — `mkdir -p` any
-  parent dir, or change the `>` redirect target, then re-launch the
-  helper (still with `run_in_background: true`).
-- **`.env` not found** — the helper reads `$PWD/.env`. Confirm the
-  current working directory is the user's idea-vault project, not the
-  plugin folder. Re-launch.
-- **`GEMINI_API_KEY` missing** — surface this to the user; do NOT
-  proceed with anonymous calls.
-- **Genuine API failure after the helper's own retries and Flash
-  fallback** — only then proceed to Step 3 (Claude web-search
-  fallback). The helper has already tried 429/503 retries and a Flash
-  fallback before reporting failure; you do not need to retry the API
-  yourself.
-
-**You may not, under any circumstance, work around a helper failure by
-writing your own curl to `generativelanguage.googleapis.com`.** That
-bypasses retry/backoff, model-fallback, the project's configured
-`GEMINI_MODEL`, the long curl timeout, and the structured logging.
-Doing so silently degrades research quality and is the documented
-failure mode that motivated this entire skill structure.
-
-Parse `candidates[0].content.parts[*].text` (concatenate) for the report
-text. Parse `candidates[0].groundingMetadata.groundingChunks` for sources
-to cite.
-
-### Step 3. On failure, fall back to Claude built-in web search
-
-Failure conditions:
-- HTTP non-2xx from Gemini.
-- Empty `candidates` array.
-- `groundingMetadata` absent (model didn't actually search).
-- Script timeout (> 8 min).
-
-On failure: use the built-in `web_search` tool. Run multiple searches:
 - "<idea concept> competitors"
 - "<idea concept> reviews complaints"
 - "<idea concept> market size"
 - "<idea concept> reddit"
 - Domain-specific terms from the description.
 
-Synthesize into the same output structure.
+Synthesize the results into the report structure shown at the top of
+this file.
 
-### Step 4. Write research.md
+### Step 3. Write research.md
 
 Write the structured report to `$PWD/ideas/<slug>/research.md`. Replace
 any existing placeholder. Set `Last updated: <today>` and `Provider(s):`
 to whichever ran.
 
-### Step 5. Update index.md
+### Step 4. Update index.md
 
 Update `Last researched: <today>` in `$PWD/ideas/<slug>/index.md`.
 
-### Step 6. Brief confirmation
+### Step 5. Brief confirmation
 
 One paragraph summary back to the user: which provider, top 1–2 findings,
 suggested next step.
